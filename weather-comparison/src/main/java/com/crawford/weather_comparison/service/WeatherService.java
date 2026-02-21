@@ -14,6 +14,8 @@ public class WeatherService {
 
 
 
+    public WeatherService(){}
+
     public WeatherService(WeatherRepository weatherRepository) {
         this.weatherRepository = weatherRepository;
     }

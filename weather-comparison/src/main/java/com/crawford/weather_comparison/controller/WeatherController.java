@@ -9,7 +9,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class WeatherController {
 
 
-    WeatherService
+    WeatherService weatherService = new WeatherService();
 
     public WeatherController(WeatherService weatherService) {
         this.weatherService = weatherService;
