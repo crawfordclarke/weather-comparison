@@ -1,5 +1,9 @@
-package com.crawford.weather_comparison.dto;
+package com.crawford.weather_comparison.model;
 
+
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+
+@JsonIgnoreProperties(ignoreUnknown = true)
 public record WeatherData(
         String city,
         double temperature,

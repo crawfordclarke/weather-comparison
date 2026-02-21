@@ -1,6 +1,7 @@
-package com.crawford.weather_comparison;
+package com.crawford.weather_comparison.model;
 
 
+import com.crawford.weather_comparison.repository.WeatherRepository;
 import jakarta.persistence.*;
 
 @Entity
@@ -9,4 +10,7 @@ public class WeatherSearch {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+
+
+
 }

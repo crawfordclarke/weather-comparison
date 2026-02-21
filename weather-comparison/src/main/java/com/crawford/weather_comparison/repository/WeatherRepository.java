@@ -1,6 +1,6 @@
 package com.crawford.weather_comparison.repository;
 
-import com.crawford.weather_comparison.dto.WeatherData;
+import com.crawford.weather_comparison.model.WeatherData;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
