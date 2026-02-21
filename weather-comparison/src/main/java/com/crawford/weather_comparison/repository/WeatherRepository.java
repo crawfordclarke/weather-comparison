@@ -1,11 +1,12 @@
 package com.crawford.weather_comparison.repository;
 
 import com.crawford.weather_comparison.model.WeatherData;
+import com.crawford.weather_comparison.model.WeatherSearch;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
 
 @Repository
-public interface WeatherRepository extends JpaRepository<WeatherData,Long> {
+public interface WeatherRepository extends JpaRepository<WeatherSearch,Long> {
 
 }
