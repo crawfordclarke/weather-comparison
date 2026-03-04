@@ -5,3 +5,6 @@ POST http://localhost:8080/api/weather/compare
 Content-Type: application/json
 
 ["London", "Paris", "Berlin"]
+
+### Recent searches
+GET http://localhost:8080/api/weather/recent/5

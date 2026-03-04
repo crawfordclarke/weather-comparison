@@ -3,6 +3,7 @@ package com.crawford.weather_comparison.controller;
 
 import com.crawford.weather_comparison.model.WeatherComparison;
 import com.crawford.weather_comparison.model.WeatherData;
+import com.crawford.weather_comparison.model.WeatherSearch;
 import com.crawford.weather_comparison.repository.WeatherRepository;
 import com.crawford.weather_comparison.service.WeatherService;
 import org.springframework.web.bind.annotation.*;
@@ -32,5 +33,9 @@ public class WeatherController {
         return weatherService.weatherComparison(cities);
     }
 
+    @GetMapping("/recent/{limit}")
+    public List<WeatherSearch> getRecentSearches(@PathVariable int limit){
+        return weatherService.getRecentSearches(limit);
+    }
 
 }
