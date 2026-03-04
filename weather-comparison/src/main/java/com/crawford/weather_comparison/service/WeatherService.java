@@ -71,7 +71,6 @@ public class WeatherService {
 
     }
     private WeatherData fetchWeatherData(String city){
-        // Your better URL building
         String url = UriComponentsBuilder
                 .fromUriString(apiurl)
                 .queryParam("q", city)
@@ -79,7 +78,7 @@ public class WeatherService {
                 .queryParam("units", "metric")
                 .toUriString();
 
-        // Get the API response
+
         OpenWeatherResponse response = restTemplate.getForObject(url, OpenWeatherResponse.class);
 
         if (response == null) {
@@ -132,6 +131,13 @@ public class WeatherService {
                 .sorted(Comparator.comparing(WeatherSearch::getSearchDate).reversed())
                 .limit(limit)
                 .toList();
+    }
+
+    public WeatherData getWeatherForCity(String city){
+        if (city == null || city.isBlank()) {
+            throw new IllegalArgumentException("City name cannot be blank");
+        }
+        return fetchWeatherData(city);
     }
 
 
