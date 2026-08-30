@@ -1,0 +1,26 @@
+Catalogued weather API changes before pivoting to ScaleAI
+Catalogued weather API changes before pivoting to ScaleAI
+
+Sure — punch list for the weather API, in order of how much it matters:
+
+1. The isEmpty() bug (must fix — a CV bullet depends on it). In weatherComparison, this block is inside the for loop:
+
+java
+if(weatherDataList.isEmpty()){
+    throw new RuntimeException("Could not fetch weather data for any city");
+}
+
+Move it after the loop closes. As written, one failed city kills the request, which is the opposite of the per-city failure isolation you're claiming.
+
+2. getRecentSearches — swap to a derived query. Currently loads the whole table, sorts in Java, takes N. Replace with a method signature in WeatherRepository:
+
+java
+List<WeatherSearch> findAllByOrderBySearchDateDesc(Pageable pageable);
+
+Then call it with PageRequest.of(0, limit). No body needed — Spring generates it. This is the one that makes bullet 4's "derived query methods" honest.
+
+3. Exception handling (biggest credibility win). A small @RestControllerAdvice class mapping IllegalArgumentException → 400 and RestClientException → 502. Right now every validation failure surfaces as a 500, which reads as "never thought about the API contract."
+
+4. Cosmetics — Erro typo, unused imports in WeatherRepository and WeatherController, System.err.println → SLF4J logger.
+
+1 and 2 are ten minutes total. 3 is maybe twenty. Do those three and the CV entry is fully accurate.

@@ -1,0 +1,134 @@
+# ScaleAI Project Context
+
+## What I'm Building
+An anime/manga fight simulator. Users pick two characters from any series, the app simulates a turn-by-turn fight grounded in actual lore. A fight engine handles mechanics (stats, damage, abilities), while the Gemini API narrates each turn using real character knowledge retrieved from a scraped wiki database (RAG). Community votes on whether the outcome was lore-accurate.
+
+## Stack
+- **Frontend:** React + TypeScript + Tailwind CSS
+- **Backend:** FastAPI (Python)
+- **AI Narration:** Google Gemini API (`gemini-2.5-flash`)
+- **Vector DB / RAG:** pgvector (PostgreSQL extension)
+- **Database:** Single PostgreSQL instance, running in Docker (`pgvector/pgvector:pg17`) — see "Database Architecture" below
+- **Scraping:** BeautifulSoup + Fandom MediaWiki API
+- **Auth:** Supabase Auth (planned, Slice 6)
+- **Realtime:** WebSockets (planned, Slice 6)
+- **Deploy:** Railway + Vercel (planned, Slice 7)
+- **Package Manager:** uv
+- **Dev Environment:** Windows, VS Code, PowerShell, pgAdmin 4 for DB inspection
+
+## Project Location
+`C:\dev\ScaleAI\`
+- Backend: `C:\dev\ScaleAI\Backend\`
+- Venv activated as `(scaleai)`
+- Project is public on GitHub
+
+## Database Architecture (IMPORTANT — recently changed)
+Originally ran two separate Postgres instances (local Postgres on 5432 for `wiki_data`, Docker pgvector container on 5433 for `rag_text`), which meant no real foreign key could exist between them (cross-server FK is not possible in Postgres).
+
+**This has been consolidated.** Both tables now live in the same database (`scaleai`) inside the **same Docker container** (`pgvector/pgvector:pg17`, container ID `bafcaa49d757`, named volume confirmed durable — `Type: volume` mounted at `/var/lib/postgresql/data`, not anonymous/ephemeral). `wiki_data` was migrated in via `pg_dump`/`pg_restore` and the old local Postgres instance is no longer used by the app. A real foreign key now exists between `rag_text.character_name` and `wiki_data.character_name`.
+
+No `docker-compose.yml` yet — container was started via a raw `docker run` command. Connecting via pgAdmin 4 under connection name `scaleVector`.
+
+## Slice Progress
+
+### Slice 1 ✅ — Fight Engine
+- `Character` Pydantic model with fields: `character_id`, `franchise`, `name`, `description`, `image_url`, `strength`, `speed`, `intelligence`, `durability`, `hax`, `health`, `max_health`
+- `simulate_turn(attacker, defender)` — handles hit chance (speed-based), damage variance, damage reduction (durability * 0.5), finishing blow detection
+- `simulate_fight(character1, character2)` — loops turns until one character reaches 0 HP, returns winner and all turns
+
+### Slice 2 ✅ — AI Narrator
+- `backend/app/services/narrator.py`
+- Uses `google-genai` SDK with `gemini-2.5-flash`
+- `narrate_turn(turn_data: dict) -> str` — takes raw turn dict, prompts Gemini to narrate dramatically
+- Prompt dumps the entire `turn_data` dict as JSON and asks for 2-3 sentence dramatic narration
+- `simulate_turn()` now calls `narrate_turn()` and adds `"narration"` key to the returned dict
+- API key loaded via `python-dotenv` from `.env` at project root
+- Confirmed working end-to-end (Goku vs Naruto test)
+
+### Slice 3 ✅ — Scraper
+- `backend/app/services/scraper.py`
+- Uses Fandom MediaWiki API (`action=parse&format=json`) — direct HTML scraping blocked by Cloudflare
+- Cleans HTML with BeautifulSoup (`get_text(separator=' ', strip=True)`) — **note: this flattens section structure; unconfirmed whether headers like "Abilities"/"Personality" survive as recognizable text in the blob, needs checking before finalizing chunking strategy**
+- Saves to `wiki_data` table (now in the consolidated DB — see Database Architecture)
+- `backend/app/services/database.py` — `get_database_connection()` and `save_wiki_data(character_name, raw_text, source_url)`
+- **`wiki_data` schema (confirmed via `\d wiki_data`):**
+```
+character_name | text                     | NOT NULL  -- PRIMARY KEY
+raw_text       | text                     | NOT NULL
+source_url     | text                     | NOT NULL
+created_at     | timestamptz              | DEFAULT CURRENT_TIMESTAMP
+```
+- **Characters scraped (10 total):** Edward Newgate, Goku, Janemba, Marshall D. Teach, Minato Namikaze, Monkey D. Luffy, Naruto Uzumaki, Piccolo (was lowercase "piccolo", fixed to match title-case convention), Sasuke Uchiha, Vegeta
+- No name collisions across franchises confirmed at this count
+- **Open risk:** character_name casing comes from however scraper/Fandom page titles happen to be capitalized — no normalization step in scraper yet. Worth adding (e.g. `.title()` with manual exceptions for names like "Marshall D. Teach") before scraping more characters
+- **Wiki API base URLs:**
+  - Naruto: `https://naruto.fandom.com/api.php`
+  - Dragon Ball: `https://dragonball.fandom.com/api.php`
+  - One Piece: `https://onepiece.fandom.com/api.php`
+
+### Slice 4 🔄 — RAG Pipeline (In Progress)
+- Database consolidation complete (see Database Architecture above)
+- `vector` extension confirmed enabled in the `scaleai` database (had to re-run `CREATE EXTENSION IF NOT EXISTS vector;` after migration, since extension state didn't carry over automatically)
+- **`rag_text` table created and confirmed (via `information_schema.columns` and `pg_constraint` queries, since `\d` meta-commands don't work in GUI query editors):**
+```sql
+CREATE TABLE rag_text (
+    id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    character_name TEXT NOT NULL REFERENCES wiki_data(character_name),
+    chunk_index INT NOT NULL,
+    raw_text_chunk TEXT NOT NULL,
+    embedding VECTOR(768)
+);
+```
+- FK confirmed via `pg_get_constraintdef`: `FOREIGN KEY (character_name) REFERENCES wiki_data(character_name)`
+- Embedding dimension set to 768 — assumed to match Gemini's `text-embedding-004` (fixed 768-dim) — **not yet 100% confirmed which embedding model/call will actually be used; if `gemini-embedding-001` is used instead, dimension is configurable (768/1536/3072 via `output_dimensionality`) so this needs to be locked in before generating real embeddings**
+- **Immediate next step:** decide chunking strategy. Need to check:
+  1. Typical length of `raw_text` per character (`SELECT character_name, length(raw_text) FROM wiki_data ORDER BY length(raw_text);`)
+  2. Whether section structure (headers) survived scraping, or if it's an undifferentiated text blob — determines whether structure-aware chunking is even possible vs. falling back to fixed-size/sentence-aware chunking
+- **Remaining steps after chunking decided:**
+  1. Write chunking logic, populate `chunk_index`
+  2. Generate embeddings using Gemini Embeddings API (model TBD — see above)
+  3. Store chunks + embeddings in `rag_text`
+  4. Add an HNSW index on `embedding` once data exists: `CREATE INDEX ON rag_text USING hnsw (embedding vector_cosine_ops);`
+  5. Write similarity search function
+  6. Wire RAG retrieval into the narrator prompt
+
+### Slices 5-7 — Not Started
+- Slice 5: React/TS frontend with streaming narration
+- Slice 6: Community voting, Supabase Auth, WebSockets
+- Slice 7: Deploy to Railway + Vercel
+
+## Key Files
+```
+C:\dev\ScaleAI\
+├── .env                          # GEMINI_API_KEY, DATABASE_URL (single, post-consolidation)
+├── Backend\
+│   ├── main.py                   # Entry point, runs simulate_fight
+│   └── app\
+│       ├── models\
+│       │   └── character.py      # Character Pydantic model
+│       └── services\
+│           ├── narrator.py       # Gemini narration
+│           ├── scraper.py        # Fandom API scraper
+│           └── database.py       # PostgreSQL connection + save_wiki_data
+```
+
+## .env File (at project root)
+```
+GEMINI_API_KEY=...
+DATABASE_URL=postgresql://postgres:<password>@localhost:5433/scaleai   # confirm this has been updated post-consolidation; was previously two separate vars (DATABASE_URL on 5432, VECTOR_DATABASE_URL on 5433) — need to verify database.py and .env no longer reference the old 5432 local instance anywhere
+```
+
+## Key Decisions & Learnings
+- Direct Fandom HTML scraping blocked by Cloudflare (403) — use MediaWiki API instead
+- `gemini-2.0-flash` hit quota issues — `gemini-2.5-flash` works
+- Dumping raw `turn_data` dict into narrator prompt works better than structured f-strings
+- `load_dotenv()` must be called before `os.getenv()` at module level
+- Run scripts from project root (`C:\dev\ScaleAI\`) with `python -m Backend.app.services.script`
+- pgvector requires C++ build tools on Windows — Docker image sidesteps this entirely; ended up consolidating *all* Postgres into the Docker container rather than fighting the build tools route
+- Cross-server foreign keys are not possible in Postgres — this was the actual reason for consolidating both databases into one instance/container, not just convenience
+- GUI tools (pgAdmin) can silently be connected to a stale/wrong database — caused a confusing "relation does not exist" error mid-migration; always double check host/port/database in the active connection tab before running DDL
+- `\d tablename` and other psql meta-commands don't work in GUI query editors — use `information_schema.columns` and `pg_constraint` / `pg_get_constraintdef` instead for schema inspection
+- Postgres requires a column to be `UNIQUE` or `PRIMARY KEY` before another table can have a `REFERENCES` foreign key pointing at it
+
+## Learning Approach
+Crawford wants to learn through guidance, not be given complete solutions. Ask probing questions and encourage reasoning through decisions independently. Step in with more direct help only when genuinely stuck.

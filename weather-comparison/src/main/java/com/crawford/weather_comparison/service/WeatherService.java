@@ -7,11 +7,13 @@ import com.crawford.weather_comparison.model.WeatherData;
 import com.crawford.weather_comparison.model.WeatherSearch;
 import com.crawford.weather_comparison.repository.WeatherRepository;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
-
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -19,6 +21,7 @@ import java.util.List;
 
 @Service
 public class WeatherService {
+    private static final Logger logger = LoggerFactory.getLogger(WeatherService.class);
 
     private final RestTemplate restTemplate;
     private final String apiurl;
@@ -41,18 +44,18 @@ public class WeatherService {
 
         List<WeatherData> weatherDataList = new ArrayList<>();
 
-        for(String city : cities){
-            try{
+        for(String city : cities) {
+            try {
                 WeatherData data = fetchWeatherData(city);
                 weatherDataList.add(data);
-            } catch (RestClientException e ){
+            } catch (RestClientException e) {
                 System.err.println("Erro fetching weather for " + city);
             }
-
-            if(weatherDataList.isEmpty()){
+        }
+        if(weatherDataList.isEmpty()){
                 throw new RuntimeException("Could not fetch weather data for any city");
             }
-        }
+
 
         WeatherData warmest = weatherDataList.stream()
                 .max(Comparator.comparingDouble(WeatherData::temperature))
@@ -122,15 +125,12 @@ public class WeatherService {
             );
             weatherRepository.save(search);
         } catch (Exception e) {
-            System.err.println(("Error saving search") + e.getMessage());
+            logger.error("Error saving search", e);
         }
     }
 
     public List<WeatherSearch> getRecentSearches(int limit){
-        return weatherRepository.findAll().stream()
-                .sorted(Comparator.comparing(WeatherSearch::getSearchDate).reversed())
-                .limit(limit)
-                .toList();
+        return weatherRepository.findAllByOrderBySearchDateDesc(PageRequest.of(0, limit));
     }
 
     public WeatherData getWeatherForCity(String city){
