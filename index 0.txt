@@ -1,5 +1,0 @@
-index 0
-left :        right :
-		
-		
-2I + 1        2I+2 
